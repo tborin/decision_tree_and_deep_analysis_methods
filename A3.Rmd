@@ -1,0 +1,346 @@
+---
+output: pdf_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+# FA590.  Assignment #3.
+
+
+## `r format(Sys.time(), "%Y-%m-%d")`
+
+
+I pledge on my honor that I have not given or received any unauthorized assistance on this assignment/examination. I further pledge that I have not copied any material from a book, article, the Internet or any other source except where I have expressly cited the source.
+
+By filling out the following fields, you are signing this pledge.  No assignment will get credit without being pledged.
+
+Name: Timothy Borin
+
+CWID: 10454256
+
+Date: 11/11/21
+
+
+# Instructions
+In this assignment, you should use R markdown to answer the questions below. Simply type your R code into embedded chunks as shown above.
+When you have completed the assignment, knit the document into a PDF file, and upload both the .pdf and .Rmd files to Canvas.
+```{r}
+CWID = 10454256 #Place here your Campus wide ID number, this will personalize
+#your results, but still maintain the reproduceable nature of using seeds.
+#If you ever need to reset the seed in this assignment, use this as your seed
+#Papers that use -1 as this CWID variable will earn 0's so make sure you change
+#this value before you submit your work.
+personal = CWID %% 10000
+set.seed(personal)#You can reset the seed at any time in your code,
+#but please always set it to this seed.
+```
+
+1 point for every item of every question. Total = 22 
+
+# Question 1
+You have to build a predictive model for targeting offers to consumers, and conduct some model performance analytics on the result.
+
+class: A factor with levels CH and MM indicating whether the customer purchased Citrus Hill or Minute Maid Orange Juice
+WeekofPurchase: Week of purchase
+StoreID: Store ID
+PriceCH: Price charged for CH
+PriceMM: Price charged for MM
+DiscCH: Discount offered for CH
+DiscMM: Discount offered for MM
+SpecialCH: Indicator of special on CH
+SpecialMM: Indicator of special on MM
+LoyalCH: Customer brand loyalty for CH
+SalePriceMM: Sale price for MM
+SalePriceCH: Sale price for CH
+PriceDiff: Sale price of MM less sale price of CH
+Store7: A factor with levels No and Yes indicating whether the sale is at Store 7
+PctDiscMM: Percentage discount for MM
+PctDiscCH: Percentage discount for CH
+ListPriceDiff: List price of MM less list price of CH
+STORE: Which of 5 possible stores the sale occured at
+
+We will use historical data on past customer responses (contained in the file marketing1.csv) in order to build a classification model to forecast the customers' decision to purchase Citrus Hill or Minute Maid. 
+
+(a) You must randomly split your data set using 70% and 30% of the observations for the training and test data set respectively.
+
+
+
+```{r}
+df=read.csv("marketing1.csv") # Import csv
+df=data.frame(df) # make dataframe with marketing data
+df=na.omit(df) # get rid of NAs
+class(df$class) #check class of var 'class'
+df$class=as.factor(df$class) # change var 'class' to type 'factor'
+df$Store7=as.factor(df$Store7)# change var 'Store7' to type 'factor'
+class(df$class) #check to ensure var is now proper type
+class(df$Store7)
+dt=sort(sample(nrow(df), nrow(df)*.7)) #Sorting data into training and test
+train<-df[dt,]
+test<-df[-dt,]
+```
+
+(b) Fit a tree to the training data, with "class" as the response and the other variables as predictors. Use the summary() function to produce summary statistics about the tree, and describe the results obtained. What is the training error rate? How many terminal nodes does the tree have?
+
+```{r}
+library(tree)
+library(MASS)
+library(randomForest)
+#rm(tree.oj) #REMEMBER TO RM THE TREE.OJ SO IT RESETS BEFORE RUNNING FINAL TIME
+tree.oj=tree(class~.,data=train) #build decision tree
+summary(tree.oj)
+#Training Error Rate:0.1696 or 16.96%
+#Total No. of Terminal Nodes:9
+```
+
+
+(c) Type in the name of the tree object in order to get a detailed text output. Pick one of the terminal nodes, and interpret the information displayed.
+
+```{r}
+tree.oj
+#Outputs tree information
+#Terminal Node : 9
+#For those customers with brand loyalty to CH greater than 0.5, if CH is 0.38 cents cheaper or less, the vast majority of customers will choose CH.
+```
+(d) Create a plot of the tree, and interpret the results.
+
+```{r}
+#Plot and text run simultaneously produces simple visualization. rpart.plot is much more visually appealing to the user but doesnt work well with cv.tree in a later question, so I reworked the func to work with cv.tree
+plot(tree.oj) 
+text(tree.oj)
+# I'm sure I dont have to tell you this but make sure to run both of the above commands simultaneously to get the tree
+#Brand loyalty is a big deciding factor out of this group of customers, followed by PriceDiff. If a customer was not loyal to the CH brand, they were 
+#likely to end up purchasing MM, but CH still made up the majority of all customers, regardless of brand loyalty. 
+```
+(e) Predict the response on the test data, and produce a confusion matrix comparing the test labels to the predicted test labels. What is the test error rate?
+
+```{r}
+tree.oj.test=tree(class~.,data=test) #test tree
+pred=predict(tree.oj.test,test,type="class") #Prediction formula
+table(pred,test$class) #Confusion matrix
+#Test Error Rate : 0.11215 or 11.22%
+```
+
+(f) Apply the cv.tree() function to the training set in order to determine the optimal tree size.
+```{r}
+tree.oj.prune=cv.tree(tree.oj, FUN=prune.misclass, K=10) #cv.tree function
+tree.oj.prune
+# Optimal Tree Size : 5 Terminal Nodes
+```
+(g) Produce a plot with tree size on the x-axis and cross-validated classification error rate on the y-axis.
+```{r}
+plot(tree.oj.prune$size,tree.oj.prune$dev,xlab="Tree Size", ylab="Error Rate", type="b") #Plot for two diff tree analyses, one based off of size and the other off of size k = 10
+plot(tree.oj.prune$k,tree.oj.prune$dev,xlab="Tree Size", ylab="Error Rate", type="b")
+```
+
+(h) Which tree size corresponds to the lowest cross-validated classification error rate?
+```{r}
+# The lowest Cross-Validated classification error rate belongs to tree of size 5
+```
+
+(i) Produce a pruned tree corresponding to the optimal tree size obtained using cross-validation. If cross-validation does not lead to a selection of a pruned tree, then create a pruned tree with five terminal nodes.
+```{r}
+library(tree) #Necessary library implementation
+prune.oj=prune.misclass(tree.oj, best=4) #Prune the training tree
+summary(prune.oj) #Summary of pruned training tree
+prune.oj.test=prune.misclass(tree.oj.test, best=4) #Prune the test tree
+summary(prune.oj.test) #Summary of pruned test tree
+#Training Error : 0.1802 or 18.02%
+#Test Error : 0.1371 or 13.71%
+```
+
+(j) Compare the training and test error rates between the pruned and unpruned trees. Which is higher?
+```{r}
+# The pruned trees have a higher error rate than the unpruned tree. 
+```
+
+
+
+# Question 2
+You have to predict the daily return of the bitcoin for the next period. The file BTCreturns.csv includes the following variables:
+
+Daily return based on adjusted daily closing prices:
+Core ETFs that represent complete market:
+VTI: Vanguard Total Stock Market ETF return
+VXUS: Vanguard Total International Stock ETF return
+BND: Vanguard Total Bond Market ETF return
+BNDX: Vanguard Total International Bond ETF return
+
+Investment style:
+VUG Vanguard Growth ETF  return
+VTV Vanguard Value ETF return
+
+Sectors: Technology (growth) and energy (value)
+QQQ Invesco Nasdaq return
+XLE Energy ETF return
+
+Cryptocurrencies:
+ETH Ethereum return
+ETH_V Ethereum trading volume
+BTC Bitcoin return
+BTC_V Bitcoin trading volume
+
+
+Additional market factors from 5 factors Fama French model:
+RM-Rf : market return minus risk free rate (market risk premium)
+SMB: Small Minus Big (firm size): difference of average return on 9 small and 9 big stock portfolios
+HML: High Minus Low (value): difference of average return on 2 value and 2 growth portfolios 
+RMW (Robust Minus Weak):  difference of average return on 2 robust and 2 weak operating profitability portfolios 
+CMA (Conservative Minus Aggressive):  difference of average return on 2 conservative and 2 aggressive investment portfolios
+
+a) Generate a new variable BTC1 which is the BTC return of the next day. Make sure that you sort the dataset according to "date." After sorting, you can remove "date" from your data set. Split your data set into 70% and 30%  training and testing datasets respectively.
+```{r}
+BitC=read.csv("BTCreturns.csv") #Import Bitcoin csv file
+BTC1=vector(length=1544) #BTC1 var creation
+BitC=data.frame(BitC) #Ensuring BTC is a dataframe
+BitC$Date=as.Date(BitC$Date, format = "%m/%d/%Y") #Converting Date from type 'chr' to type 'date'
+BitC=BitC[order(BitC$Date),] #Sorting by date
+for (i in 1:1544){ #For loop to assign BTC1 to next day's return
+  BTC1[i]=BitC$BTC[i+1]
+}
+BTC1=as.data.frame(BTC1) #Making sure new var is data frame
+BitC=cbind(BitC,BTC1) #Binding new var to dataframe
+drops="Date" #Setting Drop var
+BitC=BitC[,!(names(BitC) %in% drops)] #Dropping Dates from Dataframe
+BitC=na.omit(BitC) #Ensuring no NAs exist
+BitC=BitC[-c(1544),]# Removing last row with the NA, NA still shows up
+#1,543 rows * 0.7 is 1080.1, so training set will go from 1-1080, and test from 1081-1543
+train1<-BitC[1:1080,]
+test1<-BitC[1081:1543,]
+train1=as.data.frame(train1)
+test1=as.data.frame(test1)
+```
+
+(b) Perform boosting on the training set with 1,000 trees for a range of values of the shrinkage parameter lambda. Hint: use the gbm package, the gbm() function with the option distribution=”Gaussian” to apply boosting to a regression problem.
+```{r}
+library(gbm)
+lambdas=c(c(), seq(0.002, 0.01, by=0.001)) #Creating an array of different lambda values to test from
+lambdas=c(lambdas, seq(0.02, 0.1, by=0.01))
+lambdas=c(lambdas, seq(0.2,1, by=0.1))
+lambda.length=length(lambdas) #Creating lambda length var for future use
+train1.err=rep(NA, lambda.length) # Training and test arrays to store values in 
+test1.err=rep(NA, lambda.length)
+for (i in 1:lambda.length){ # For loop : Runs GBM for value lambda from the array, predicts both test and training from it, and then stores the value
+  train.boost=gbm(BTC1~.,data=train1,distribution="gaussian",n.trees=1000,shrinkage=lambdas[i]) # in an array for future plotting
+  train1.pred=predict(train.boost, train1, n.trees=1000)
+  test1.pred=predict(train.boost, test1, n.trees=1000)
+  train1.err[i]=mean((train1$BTC1 - train1.pred)^2)
+  test1.err[i]=mean((test1$BTC1 - test1.pred)^2)
+}
+```
+
+(c) Produce a plot with different shrinkage values on the x-axis and the corresponding test set MSE on the y-axis.
+```{r}
+plot(x=lambdas, y=test1.err, xlab = "Shrinkage", ylab= "Test MSE", grid(nx=NULL)) #Plot grid based on Test set MSE as seen by y val
+```
+
+(d) Using the best shrinkage value, retrain your boosting model with the training dataset. What is the test set MSE for this approach?
+```{r}
+lambdas[which.min(test1.err)] #Finding the optimal lambda value from the prev test set to set shrinkage val to
+train.boost1=gbm(BTC1~.,data=train1,distribution="gaussian",n.trees=1000,shrinkage=0.002) #Retraining dataset with optimal shrinkage val
+train2.pred=predict(train.boost1, train1, n.trees=1000) #running the same training and test sets as earlier
+test2.pred=predict(train.boost1, test1, n.trees=1000)
+train2.err=mean((train1$BTC1 - train2.pred)^2)
+test2.err=mean((test1$BTC1 - test2.pred)^2)
+test2.err #Finding the test set MSE
+#Test Set SME of 24.65525
+#Creating the array to store MSEs and type of model
+vec1=c("Boosting", "Bagging", "randomForest", "SVM", "SVMNL", "GAM")
+vec2=c(test2.err)
+```
+
+(e) Apply bagging to the training set. What is the test set MSE for this approach?
+```{r}
+library(randomForest)
+library(MASS)
+library(rpart)
+library(rattle)
+bag.tree=randomForest(BTC1~.,data=train1, mtry=17, importance=TRUE) #17 mrty uses all but the indep. var, which indicates bagging
+yhat.bag=predict(bag.tree,newdata=test1) #creating prediction value
+rd.test=test1$BTC1 # setting test val for MSE calculation, this wont change for all the formulas so this is the only time it gets set
+var3=mean((yhat.bag-rd.test)^2) #MSE Calculation
+vec2=c(vec2, var3) #MSE Storage
+var3
+# Test MSE is 55.79212
+```
+
+(f) Apply random forest to the training set. What is the test set MSE for this approach? Which variables appear to be the most important predictors in the random forest model?
+```{r}
+randforest=randomForest(BTC1~., data=train1, mtry=5, importance=TRUE) #RandomForest calculation, mtry=5 to limit the vars and introduce randomness
+yhat.rf=predict(randforest,newdata=test1) #MSE calculations
+var4=mean((yhat.rf-rd.test)^2)
+vec2=c(vec2,var4)
+#Test MSE is 43.31796
+```
+
+(g) Apply support vector machine to the training set. What is the test set MSE for this approach?
+```{r}
+library(e1071)
+main=svm(BTC1~., data=train1, kernel="linear", cost=0.01, scale=T) #Linear kernel, cost was changed through multiple iterations during running and testing
+yhat.svm=predict(main, newdata=test1)
+var5=mean((yhat.svm-rd.test)^2)
+vec2=c(vec2,var5)
+# Test Set MSE for Multiple Costs
+# Cost 0.01: 26.36608
+# Cost 0.1 : 28.58219
+# Cost 1   : 30.02192
+# Cost 100 : 30.04326
+# Cost 10000 : 49.47812
+# The lower the cost, the better the test set MSE in this approach
+```
+
+(h) Apply support vector machine with a nonlinear kernel to the training set. What is the test set MSE for this approach?
+```{r}
+main2=svm(BTC1~., data=train1, kernel="radial", gamma = 1, cost = 10, scale = FALSE) # Introducing nonlinear kernel and gamma setting, cost was again changed 
+yhat2.svm=predict(main2, newdata=test1)                                               # during running 
+var6=mean((yhat2.svm-rd.test)^2)
+vec2=c(vec2, var6)
+# Test cost 0.01 :24.49791
+# Test cost 0.1  :24.49579
+# Test cost 1    :24.49428
+# Test cost 10   :24.49359
+# Test cost 100  :24.49516
+# Test cost 1000 :24.49516
+# Test cost 10000:24.49516
+# the best test set MSE is 24.49359 with cost value 10
+```
+
+(i) Perform subset selection (your choice on how) in order to identify a satisfactory model that uses just a subset of the predictors (if your approach suggests using all of the predictors, then follow your results and use them all).I suggest that you use the function stepAIC.
+```{r}
+library(MASS)
+testvar=lm(BTC1~., data=train1) #Getting the dataset prepped to run stepAIC to find the best subset
+stepAIC(testvar, direction="both") #Finding the ideal subset
+#Ideal Values : BTC1 ~ SMB, ETH_V
+```
+
+(j) Fit a GAM on the training data with this reduced dataset, using splines of each feature with 5 degrees of freedom. What is the test set MSE for this approach? What are the relevant nonlinear variables?
+```{r}
+library(mgcv)
+gamvar=gam(BTC1~ s(SMB, k=5)+s(ETH_V, k=5), data=train1) #GAM model with DoF set to 5 for the variables
+summary(gamvar)
+yhat.gam=predict(gamvar, newdata=test1) # MSE Prediction
+var8=mean((yhat.gam-rd.test)^2)
+vec2=c(vec2, var8)
+#Test Set MSE : 27.53583
+```
+
+(k) Build a table to compare the test set MSE of your best model for:
+- Boosting
+- Bagging
+- Random Forests
+- Support vector machine
+- Support vector machine with nonlinear kernel
+- GAM
+```{r}
+as.data.frame(vec1) # Setting the two vectors as DFs to cbind them
+as.data.frame(vec2)
+MSEtable=cbind(vec1,vec2) #Creating the MSE table through cbind
+MSEtable
+```
+
+(l) Discuss and explain your results of the previous table. Why do you think that some algorithms performed better than others? What explains the result of the best algorithm?
+```{r}
+# Support Vector Machines with Nonlinear Kernel performed the best for MSE. Boosting performed well overall. Not surprising that bagging performed poorly since it is meant to be a supplementary type of analysis and not used solo. The algorithms that performed the best either took advantage of improvements upon multiple iterations (boosting), were allowed to be more malleable by removing the linearity (SVMNL), or the var set was minimized to allow for more accurate predicting (GAM). The removal of linearity from the Support Vector Machine was the key to this function performing the best out of all the models
+```
+
